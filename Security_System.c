@@ -9,6 +9,38 @@
  * -------------------------------------------------------------------------- */
 
 // Includes
+#include <stdio.h>
+#include "platform.h"
+#include "xil_printf.h"
+#include "xparameters.h"
+#include "xil_cache.h"
+#include "keypad_binary_slave.h"
+#include "seven_segment_display_slave.h"
+#include "axilab_slave_button.h"
+#include "axilab_slave_led.h"
+#include "xil_io.h"
+
+// Masks for on board push buttons
+#define BUTTON_0_MASK 1
+#define BUTTON_1_MASK 2
+#define RESET_BUTTON_MASK BUTTON_1_MASK  //redefinition
+#define MODE_BUTTON_MASK  BUTTON_0_MASK
+
+// Masks for rgb leds of on board leds
+#define LED_0_BLUE_MASK   0b000001
+#define LED_0_GREEN_MASK  0b000010
+#define LED_0_RED_MASK    0b000100
+#define LED_1_BLUE_MASK   0b001000
+#define LED_1_GREEN_MASK  0b010000
+#define LED_1_RED_MASK    0b100000
+#defibe LED_1_PURPLE_MASK LED_1_BLUE_MASK | LED_1_RED_MASK
+#defibe LED_1_YELLOW_MASK LED_1_GREEN_MASK | LED_1_RED_MASK
+
+// Masks for peripheral addresses
+#define RGB_LED_BASE_ADDR       0x43c30000
+#define ON_BOARD_PUSH_BASE_ADDR 0x43c10000
+#define SEVEN_SEGMENT_BASE_ADDR 0x43c20000
+#define KEYPAD_BASE_ADDR        0x43c00000
 
 // An enum to define the operating modes (states) of the program
 #define DEFAULT_MODE MODE_1_CHECK_CODE
@@ -18,8 +50,18 @@ typedef enum
     MODE_2_SET_CODE   = 0x2,
     MODE_3_GET_CODE   = 0x3
 } Mode;
+
 void toggleMode();
 void setMode(Mode mode);
+
+// Sets LED color for mode of operation
+void setModeLED();
+
+// Determines if button has reset button has been pressed
+bool isResetButtonPressed();
+
+// Get keypad entries
+void getKeypadEntries();
 
 #define CODE_LENGTH 4
 #define MAX_NUM_STORED_CODES 100
@@ -51,6 +93,7 @@ uint8_t currentKeypadEntryIndex; // CDL=> You are here: get index working
 int main(void)
 {
     // Initialization
+    init_platform();
 
     // Set the current mode
     setMode(DEFAULT_MODE);
@@ -73,9 +116,11 @@ int main(void)
             // Toggle the current mode and reset code
             toggleMode();
         }
-        else if (keypad key is pressed)
+        else if (keypad key is pressed) {
+
+        }
         {
-            
+
             // add to currentKeyPadEntry
             // set seven segment display to currentKeyPadEntry
 
@@ -124,6 +169,8 @@ int main(void)
         }
 
     }
+    cleanup_platform();
+    return 0;
 }
 
 /*
@@ -163,9 +210,41 @@ void setMode(Mode mode)
     currentMode = mode
 
     // Set the mode LED to the current mode color
-    setModeLED();
+    setModeLED(mode);
 
     // Reset the current code
     currentKeypadEntry = BLANK_CODE;
     currentKeypadEntryIndex = 0;
+}
+
+/*
+ * This function sets the current mode, changes mode led, and
+ * resets current code.
+ *
+ * Return: None (void)
+ */
+void setModeLED() {
+  switch (currentMode) {
+    case MODE_1_CHECK_CODE:
+        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_1_BLUE_MASK);
+    case MODE_2_SET_CODE:
+        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_1_YELLOW_MASK);
+    case MODE_3_GET_CODE:
+        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_1_PURPLE_MASK);
+    default:
+  }
+}
+
+/*
+ * This function determines if the reset button has been pressed
+ *
+ * Return: bool: true if reset button has been pressed,
+ * false if reset button has not been pressed
+ */
+bool isResetButtonPressed() {
+  if(AXILAB_SLAVE_BUTTON_mReadReg(ON_BOARD_PUSH_BASE_ADDR, 0) &
+     RESET_BUTTON_MASK) {
+      return true;
+  }
+  return false;
 }
