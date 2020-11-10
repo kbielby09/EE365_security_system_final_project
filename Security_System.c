@@ -114,6 +114,14 @@ int main(void)
     // Initialization
     init_platform();
 
+    // initialize stored codes
+    for(int i = 0; i < MAX_NUM_STORED_CODES; i++) {
+    	storedCodes[i][0] = 0xF;
+    	storedCodes[i][1] = 0xF;
+    	storedCodes[i][2] = 0xF;
+    	storedCodes[i][3] = 0xF;
+    }
+
     // Set the current mode
     setMode(0x1);
 
@@ -124,6 +132,7 @@ int main(void)
     {
         if (isResetButtonPressed())
         {
+        	print("Reset Button was pressed");
             // Set the current mode
             setMode(DEFAULT_MODE);
 
@@ -144,14 +153,16 @@ int main(void)
         		currentKeypadEntry[2] = BLANK_CODE[2];
         		currentKeypadEntry[3] = BLANK_CODE[3];
         	}
+
         	for(int i = 0; i < 15000000; i++){}
             // add to currentKeyPadEntry
             addNewKeypadEntry();
+
             // set seven segment display to currentKeyPadEntry
             displayCurrentEntry();
 
-            if (currentKeypadEntry[0] != 15 & currentKeypadEntry[1] != 15 &  // NOTE could potentially create a function for this
-                currentKeypadEntry[2] != 15 & currentKeypadEntry[3] != 15)
+            if (currentKeypadEntry[0] != 15 && currentKeypadEntry[1] != 15 &&  // NOTE could potentially create a function for this
+                currentKeypadEntry[2] != 15 && currentKeypadEntry[3] != 15)
             {
                switch (currentMode)
                {
@@ -181,8 +192,9 @@ int main(void)
                     	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK | LED_1_GREEN_MASK);
                     	   for(int i = 0; i < 10000000; i++){}
                     	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK);
-
+                           printf("current pin: %d%d%d%d", currentKeypadEntry[0], currentKeypadEntry[1], currentKeypadEntry[2], currentKeypadEntry[3]);
                     	   storeNewPin();
+                    	   printf("Stored Code: %d%d%d%d", storedCodes[0][0], storedCodes[0][1], storedCodes[0][2], storedCodes[0][3]);
                        }
                        else
                        {
@@ -192,18 +204,18 @@ int main(void)
                     	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK);
                        }
                        break;
-//                   case MODE_3_GET_CODE:
-//                       printf("current mode: %d", currentMode);
-//                       // Set led1 (mode led) to color of currentMode
-//                       if (code != masterCode and code in codes[])
-//                       {
-//                           // flash green leds and remove code from codes[]
-//                       }
-//                       else
-//                       {
-//                           // flash red leds
-//                       }
-//                       break;
+                   case MODE_3_GET_CODE:
+                       printf("current mode: %d", currentMode);
+                       // Set led1 (mode led) to color of currentMode
+                       if (!checkForMasterCode() && checkForExistingCode())
+                       {
+                           // flash green leds and remove code from codes[]
+                       }
+                       else
+                       {
+                           // flash red leds
+                       }
+                       break;
                    default:
                        break;
                }
@@ -334,18 +346,27 @@ bool isKeypadPressed() {
 void addNewKeypadEntry() {
   u32 data1 = KEYPAD_BINARY_SLAVE_mReadReg(0x43c00000, 0);
 //  printf("data: %d", data1);
-  for(int i = 3; i >= 0; i--) {
-      if(data1 != 15) {
-          if(i == 0) {
-              currentKeypadEntry[0] = data1 & 0xF;
-          }
-          else {
-              currentKeypadEntry[i] = currentKeypadEntry[i - 1];
-          }
-      }
-
+  if(data1 != 0xF && currentKeypadEntry[3] != 0xF) {
+	  currentKeypadEntry[0] = data1;
+	  currentKeypadEntry[1] = BLANK_CODE[1];
+	  currentKeypadEntry[2] = BLANK_CODE[2];
+	  currentKeypadEntry[3] = BLANK_CODE[3];
   }
-  printf("entries: %d%d%d%d\n", currentKeypadEntry[0],currentKeypadEntry[1],currentKeypadEntry[2],currentKeypadEntry[3]);
+  else {
+	  for(int i = 3; i >= 0; i--) {
+	       if(data1 != 15) {
+	           if(i == 0) {
+	               currentKeypadEntry[0] = data1 & 0xF;
+	           }
+	           else {
+	               currentKeypadEntry[i] = currentKeypadEntry[i - 1];
+	           }
+	       }
+
+	   }
+  }
+
+  printf("entries: %d%d%d%d\n", currentKeypadEntry[0], currentKeypadEntry[1], currentKeypadEntry[2], currentKeypadEntry[3]);
 }
 
 /*
@@ -371,12 +392,15 @@ bool checkForMasterCode() {
  *
  * Return: bool returns true if currentKeypadEntry is the master code
  */
-bool checkForExistingCode() {
+bool checkForExistingCode()
+{
 	for(int i = 0; i < MAX_NUM_STORED_CODES; i++) {
 		if(currentKeypadEntry[0] == storedCodes[i][0] && currentKeypadEntry[1] == storedCodes[i][1] && currentKeypadEntry[2] == storedCodes[i][2] && currentKeypadEntry[3] == storedCodes[i][3]) {
+			print("existing code found\n");
 			return true;
 		}
 	}
+	print("Code not found\n");
 	return false;
 }
 
@@ -386,12 +410,18 @@ bool checkForExistingCode() {
  * Return: None (void)
  */
 void storeNewPin() {
+
 	if(currentKeypadEntry[3] != 0xF)
 	{
+		storedCodes[0][0] = currentKeypadEntry[0];
+	    storedCodes[0][1] = currentKeypadEntry[1];
+		storedCodes[0][2] = currentKeypadEntry[2];
+		storedCodes[0][3] = currentKeypadEntry[3];
 		for(int i = 0; i < MAX_NUM_STORED_CODES; i++)
 		{
 			if(storedCodes[i][0] == 0xF)
 			{
+				print("stored new code\n");
 				storedCodes[i][0] = currentKeypadEntry[0];
 				storedCodes[i][1] = currentKeypadEntry[1];
 				storedCodes[i][2] = currentKeypadEntry[2];
