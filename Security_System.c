@@ -10,6 +10,7 @@
 
 // Includes
 #include <stdio.h>
+#include <stdbool.h>
 #include "platform.h"
 #include "xil_printf.h"
 #include "xparameters.h"
@@ -33,8 +34,8 @@
 #define LED_1_BLUE_MASK   0b001000
 #define LED_1_GREEN_MASK  0b010000
 #define LED_1_RED_MASK    0b100000
-#defibe LED_1_PURPLE_MASK LED_1_BLUE_MASK | LED_1_RED_MASK
-#defibe LED_1_YELLOW_MASK LED_1_GREEN_MASK | LED_1_RED_MASK
+#define LED_0_PURPLE_MASK LED_0_BLUE_MASK | LED_0_RED_MASK
+#define LED_0_YELLOW_MASK LED_0_GREEN_MASK | LED_0_RED_MASK
 
 // Masks for peripheral addresses
 #define RGB_LED_BASE_ADDR       0x43c30000
@@ -57,11 +58,20 @@ void setMode(Mode mode);
 // Sets LED color for mode of operation
 void setModeLED();
 
-// Determines if button has reset button has been pressed
+// Determines if reset button has been pressed
 bool isResetButtonPressed();
 
-// Get keypad entries
-void getKeypadEntries();
+// Determines if mode button has been pressed
+bool isModeButtonPressed();
+
+// Determines if keypad has been pressed
+bool isKeypadPressed();
+
+// add a new keypad entry to code
+void addNewKeypadEntry();
+
+// displays current pin entry to
+void displayCurrentEntry();
 
 #define CODE_LENGTH 4
 #define MAX_NUM_STORED_CODES 100
@@ -73,7 +83,7 @@ const uint8_t BLANK_CODE[CODE_LENGTH] = {0xF,0xF,0xF,0xF};
 const uint8_t MASTER_CODE[CODE_LENGTH] = {0,0,0,0};
 
 // The current mode of the program
-modes currentMode;
+Mode currentMode;
 
 // Location to store valid codes
 uint8_t storedCodes[MAX_NUM_STORED_CODES][CODE_LENGTH];
@@ -103,67 +113,68 @@ int main(void)
 
     while (1) // Main program execution loop
     {
-        if (resetbtn is pressed)
+        if (isResetButtonPressed())
         {
             // Set the current mode
             setMode(DEFAULT_MODE);
 
             // Clear any stored codes // CDL=> Move to method?
-            memset(storedCodes, 0, sizeof(storedCodes[0][0]) * MAX_NUM_STORED_CODES * CODE_LENGTH);
+            memset(storedCodes, 0, sizeof(storedCodes[0][0]) *
+                   MAX_NUM_STORED_CODES * CODE_LENGTH);
         }
-        else if (modeToggleBtn is pressed)
+        else if (isModeButtonPressed())
         {
             // Toggle the current mode and reset code
             toggleMode();
         }
-        else if (keypad key is pressed) {
-
-        }
+        else if (isKeypadPressed())
         {
-
             // add to currentKeyPadEntry
+            addNewKeypadEntry();
             // set seven segment display to currentKeyPadEntry
+            displayCurrentEntry();
 
-            if (currentKeyPadEntry is complete)
+            if (currentKeypadEntry[0] != 0xF & currentKeypadEntry[1] != 0xF &  // NOTE could potentially create a function for this
+                currentKeypadEntry[2] != 0xF & currentKeypadEntry[3] != 0xF)
             {
-                switch (currentMode)
-                {
-                    case checkState:
-                        // Set led1 (mode led) to color of currentMode
-                        if (code == masterCode or code in codes[])
-                        {
-                            // flash green leds
-                        }
-                        else
-                        {
-                            // flash red leds
-                        }
-                        break;
-                    case setState:
-                        // Set led1 (mode led) to color of currentMode
-                        if (code != masterCode and code not in codes[])
-                        {
-                            // flash green leds and add code to codes[]
-                        }
-                        else
-                        {
-                            // flash red leds
-                        }
-                        break;
-                    case deleteState:
-                        // Set led1 (mode led) to color of currentMode
-                        if (code != masterCode and code in codes[])
-                        {
-                            // flash green leds and remove code from codes[]
-                        }
-                        else
-                        {
-                            // flash red leds
-                        }
-                        break;
-                    default:
-                        break;
-                }
+               switch (currentMode)
+               {
+                   case MODE_1_CHECK_CODE:
+                       // Set led1 (mode led) to color of currentMode
+                       if (currentKeypadEntry == MASTER_CODE)
+                       {
+                           // flash green leds
+                       }
+                       else
+                       {
+                           // flash red leds
+                       }
+                       break;
+//                   case MODE_2_SET_CODE:
+//                       // Set led1 (mode led) to color of currentMode
+//                       if (code != masterCode and code not in codes[])
+//                       {
+//                           // flash green leds and add code to codes[]
+//                       }
+//                       else
+//                       {
+//                           // flash red leds
+//                       }
+//                       break;
+//                   case MODE_3_GET_CODE:
+//                       // Set led1 (mode led) to color of currentMode
+//                       if (code != masterCode and code in codes[])
+//                       {
+//                           // flash green leds and remove code from codes[]
+//                       }
+//                       else
+//                       {
+//                           // flash red leds
+//                       }
+//                       break;
+                   default:
+                       break;
+               }
                 // clear currentKeyPadEntry and set reset seven seg display
             }
         }
@@ -207,31 +218,37 @@ void toggleMode()
 void setMode(Mode mode)
 {
     // Set the current mode
-    currentMode = mode
+    currentMode = mode;
 
     // Set the mode LED to the current mode color
-    setModeLED(mode);
+    setModeLED();
 
     // Reset the current code
-    currentKeypadEntry = BLANK_CODE;
+    currentKeypadEntry[0] = BLANK_CODE[0];
+    currentKeypadEntry[1] = BLANK_CODE[1];
+    currentKeypadEntry[2] = BLANK_CODE[2];
+    currentKeypadEntry[3] = BLANK_CODE[3];
     currentKeypadEntryIndex = 0;
 }
 
 /*
- * This function sets the current mode, changes mode led, and
- * resets current code.
+ * This function sets the LED color for the current mode
  *
  * Return: None (void)
  */
 void setModeLED() {
   switch (currentMode) {
     case MODE_1_CHECK_CODE:
-        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_1_BLUE_MASK);
+        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_0_BLUE_MASK);
+        break;
     case MODE_2_SET_CODE:
-        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_1_YELLOW_MASK);
+        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_0_YELLOW_MASK);
+        break;
     case MODE_3_GET_CODE:
-        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_1_PURPLE_MASK);
+        AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_0_PURPLE_MASK);
+        break;
     default:
+    	break;
   }
 }
 
@@ -247,4 +264,72 @@ bool isResetButtonPressed() {
       return true;
   }
   return false;
+}
+
+/*
+ * This function determines if the mode button has been pressed
+ *
+ * Return: bool: true if mode button has been pressed,
+ * false if mode button has not been pressed
+ */
+bool isModeButtonPressed() {
+  if(AXILAB_SLAVE_BUTTON_mReadReg(ON_BOARD_PUSH_BASE_ADDR, 0) &
+     MODE_BUTTON_MASK) {
+      return true;
+  }
+  return false;
+}
+
+/*
+ * This function determines if the keypad button has been pressed
+ *
+ * Return: bool: true if keypad button has been pressed,
+ * false if keypad button has not been pressed
+ */
+bool isKeypadPressed() {
+  if(KEYPAD_BINARY_SLAVE_mReadReg(KEYPAD_BASE_ADDR, 0) != !0x0) {  // TODO double check if this is correct
+    return true;
+  }
+  return false;
+}
+
+/*
+ * This function adds a new keypad entry to the set of pin numbers
+ *
+ * Return: None (void)
+ */
+void addNewKeypadEntry() {
+  u32 data1 = KEYPAD_BINARY_SLAVE_mReadReg(0x43c00000, 0);
+  if(currentKeypadEntry[3] == 0xF ) {
+      for(int i = 3; i >= 0; i--) {
+          if(data1 != 0xFFFFFFFF) {
+            if(i == 0) {
+                currentKeypadEntry[0] = data1 & 0xF;
+            }
+            else {
+                currentKeypadEntry[i] = currentKeypadEntry[i - 1];
+            }
+          }
+      }
+      currentKeypadEntryIndex++;
+  }
+//  else if(data1 != 0xF) {  // add newly entered pin into
+//      if(storedCodes[MAX_NUM_STORED_CODES - 1][3] != 0xF) {
+//          storedCodes[currentKeypadEntryIndex][0] = currentKeypadEntry[0];
+//          storedCodes[currentKeypadEntryIndex][1] = currentKeypadEntry[1];
+//          storedCodes[currentKeypadEntryIndex][2] = currentKeypadEntry[2];
+//          storedCodes[currentKeypadEntryIndex][3] = currentKeypadEntry[3];
+//      }
+//      currentKeypadEntryIndex++;
+//  }
+}
+
+/*
+ * This function adds a new keypad entry to the set of pin numbers
+ *
+ * Return: None (void)
+ */
+void displayCurrentEntry() {
+	uint16_t displayValue = (currentKeypadEntry[3] & 0x1000) | (currentKeypadEntry[2] & 0x0100) | (currentKeypadEntry[1] & 0x0010) | currentKeypadEntry[0];
+	SEVEN_SEGMENT_DISPLAY_SLAVE_mWriteReg(0x43c20000, 0, displayValue);
 }
