@@ -119,7 +119,7 @@ int main(void)
     // Initialization
     init_platform();
 
-    // initialize stored codes
+    // initialize stored codes to null values of 0xF
     for(int i = 0; i < MAX_NUM_STORED_CODES; i++) {
     	storedCodes[i][0] = 0xF;
     	storedCodes[i][1] = 0xF;
@@ -127,7 +127,7 @@ int main(void)
     	storedCodes[i][3] = 0xF;
     }
 
-    // Set the current mode
+    // Set the current mode to check mode
     setMode(0x1);
 
     // Hex value of key press
@@ -148,6 +148,9 @@ int main(void)
         {
             // Toggle the current mode and reset code
             toggleMode();
+
+            for(int i = 0; i < 100000000; i++){}  // delay
+
         }
         else if (isKeypadPressed())
         {
@@ -173,13 +176,15 @@ int main(void)
                {
                    case MODE_1_CHECK_CODE:
                        // Set led1 (mode led) to color of currentMode
-                       if (checkForMasterCode())
+                       if (checkForMasterCode() | checkForExistingCode())
                        {
                     	   // flash green led
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_BLUE_MASK |
                                                     LED_1_GREEN_MASK);
-                    	   for(int i = 0; i < 10000000; i++){}
+
+                    	   for(int i = 0; i < 10000000; i++){}  // delay
+
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_BLUE_MASK);
                        }
@@ -201,7 +206,7 @@ int main(void)
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_YELLOW_MASK |
                                                     LED_1_GREEN_MASK);
-                    	   for(int i = 0; i < 10000000; i++){}
+                    	   for(int i = 0; i < 10000000; i++){}  // delay
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_YELLOW_MASK);
 
@@ -213,7 +218,9 @@ int main(void)
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_YELLOW_MASK |
                                                     LED_1_RED_MASK);
-                    	   for(int i = 0; i < 10000000; i++){}
+
+                    	   for(int i = 0; i < 10000000; i++){}  // delay
+
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_YELLOW_MASK);
                        }
@@ -222,23 +229,28 @@ int main(void)
 
                        if (!checkForMasterCode() && checkForExistingCode())
                        {
-                           // flash green leds and remove code from codes[]
+                           // flash green led
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_PURPLE_MASK |
                                                     LED_1_GREEN_MASK);
-                    	   for(int i = 0; i < 10000000; i++){}
+
+                    	   for(int i = 0; i < 10000000; i++){}  // delay
+
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_PURPLE_MASK);
 
+                         // remove entered pin from stored codes
                     	   removePin();
                        }
                        else
                        {
-                           // flash red leds
+                         // flash red leds
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_PURPLE_MASK |
                                                     LED_1_RED_MASK);
-                    	   for(int i = 0; i < 10000000; i++){}
+
+                    	   for(int i = 0; i < 10000000; i++){}  // delay
+
                     	   AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
                                                     LED_0_PURPLE_MASK);
                        }
@@ -266,13 +278,13 @@ void toggleMode()
     switch (currentMode)
     {
         case MODE_1_CHECK_CODE:
-            setMode(MODE_2_SET_CODE);
+            setMode(MODE_2_SET_CODE);   // change mode to check mode
             break;
         case MODE_2_SET_CODE:
-            setMode(MODE_3_GET_CODE);
+            setMode(MODE_3_GET_CODE);   // change mode to set mode
             break;
         case MODE_3_GET_CODE:
-            setMode(MODE_1_CHECK_CODE);
+            setMode(MODE_1_CHECK_CODE); // change mode to remove mode
             break;
         default:
             setMode(DEFAULT_MODE);
@@ -380,7 +392,7 @@ void addNewKeypadEntry() {
   }
   else {
 	  for(int i = 3; i >= 0; i--) {
-	       if(data1 != 15) {
+	       if(data1 != 0xF) {
 	           if(i == 0) {
 	               currentKeypadEntry[0] = data1 & 0xF;
 	           }
