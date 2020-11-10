@@ -82,6 +82,9 @@ bool checkForExistingCode();
 // stores newly entered pin number
 void storeNewPin();
 
+// remove stored pin number
+void removePin();
+
 #define CODE_LENGTH 4
 #define MAX_NUM_STORED_CODES 100
 
@@ -184,7 +187,6 @@ int main(void)
                        }
                        break;
                    case MODE_2_SET_CODE:
-                       // Set led1 (mode led) to color of currentMode
                        if (!checkForMasterCode() && !checkForExistingCode())
                        {
                            // flash green leds and add code to codes[]
@@ -212,6 +214,8 @@ int main(void)
                     	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_PURPLE_MASK | LED_1_GREEN_MASK);
                     	   for(int i = 0; i < 10000000; i++){}
                     	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_PURPLE_MASK);
+
+                    	   removePin();
                        }
                        else
                        {
@@ -286,7 +290,8 @@ void setMode(Mode mode)
  *
  * Return: None (void)
  */
-void setModeLED() {
+void setModeLED()
+{
   switch (currentMode) {
     case MODE_1_CHECK_CODE:
         AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_0_BLUE_MASK);
@@ -433,6 +438,23 @@ void storeNewPin() {
 				storedCodes[i][3] = currentKeypadEntry[3];
 				break;
 			}
+		}
+	}
+}
+
+/*
+ * This function removes a previously entered four digit pin
+ *
+ * Return: None (void)
+ */
+void removePin()
+{
+	for(int i = 0; i < MAX_NUM_STORED_CODES; i++) {
+		if(storedCodes[i][0] == currentKeypadEntry[0] && storedCodes[i][1] == currentKeypadEntry[1]	&& storedCodes[i][2] == currentKeypadEntry[2] && storedCodes[i][3] == currentKeypadEntry[3]) {
+			storedCodes[i][0] = 0xF;
+		    storedCodes[i][1] = 0xF;
+			storedCodes[i][2] = 0xF;
+			storedCodes[i][3] = 0xF;
 		}
 	}
 }
