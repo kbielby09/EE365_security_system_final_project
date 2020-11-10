@@ -184,7 +184,6 @@ int main(void)
                        }
                        break;
                    case MODE_2_SET_CODE:
-                	   printf("current mode: %d", currentMode);
                        // Set led1 (mode led) to color of currentMode
                        if (!checkForMasterCode() && !checkForExistingCode())
                        {
@@ -206,14 +205,20 @@ int main(void)
                        break;
                    case MODE_3_GET_CODE:
                        printf("current mode: %d", currentMode);
-                       // Set led1 (mode led) to color of currentMode
+
                        if (!checkForMasterCode() && checkForExistingCode())
                        {
                            // flash green leds and remove code from codes[]
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_PURPLE_MASK | LED_1_GREEN_MASK);
+                    	   for(int i = 0; i < 10000000; i++){}
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_PURPLE_MASK);
                        }
                        else
                        {
                            // flash red leds
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_PURPLE_MASK | LED_1_RED_MASK);
+                    	   for(int i = 0; i < 10000000; i++){}
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_PURPLE_MASK);
                        }
                        break;
                    default:
