@@ -79,6 +79,9 @@ bool checkForMasterCode();
 // checks if code is already existing
 bool checkForExistingCode();
 
+// stores newly entered pin number
+void storeNewPin();
+
 #define CODE_LENGTH 4
 #define MAX_NUM_STORED_CODES 100
 
@@ -170,13 +173,16 @@ int main(void)
                        }
                        break;
                    case MODE_2_SET_CODE:
+                	   printf("current mode: %d", currentMode);
                        // Set led1 (mode led) to color of currentMode
-                       if (checkForMasterCode() | )
+                       if (!checkForMasterCode() && !checkForExistingCode())
                        {
                            // flash green leds and add code to codes[]
                     	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK | LED_1_GREEN_MASK);
                     	   for(int i = 0; i < 10000000; i++){}
                     	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK);
+
+                    	   storeNewPin();
                        }
                        else
                        {
@@ -187,6 +193,7 @@ int main(void)
                        }
                        break;
 //                   case MODE_3_GET_CODE:
+//                       printf("current mode: %d", currentMode);
 //                       // Set led1 (mode led) to color of currentMode
 //                       if (code != masterCode and code in codes[])
 //                       {
@@ -339,19 +346,6 @@ void addNewKeypadEntry() {
 
   }
   printf("entries: %d%d%d%d\n", currentKeypadEntry[0],currentKeypadEntry[1],currentKeypadEntry[2],currentKeypadEntry[3]);
-
-//  if(currentKeypadEntry[3] == 0xF ) {
-
-//  }
-//  else if(data1 != 0xF) {  // add newly entered pin into
-//      if(storedCodes[MAX_NUM_STORED_CODES - 1][3] != 0xF) {
-//          storedCodes[currentKeypadEntryIndex][0] = currentKeypadEntry[0];
-//          storedCodes[currentKeypadEntryIndex][1] = currentKeypadEntry[1];
-//          storedCodes[currentKeypadEntryIndex][2] = currentKeypadEntry[2];
-//          storedCodes[currentKeypadEntryIndex][3] = currentKeypadEntry[3];
-//      }
-//      currentKeypadEntryIndex++;
-//  }
 }
 
 /*
@@ -378,7 +372,32 @@ bool checkForMasterCode() {
  * Return: bool returns true if currentKeypadEntry is the master code
  */
 bool checkForExistingCode() {
-	for(int i = 0; i < ) {
+	for(int i = 0; i < MAX_NUM_STORED_CODES; i++) {
+		if(currentKeypadEntry[0] == storedCodes[i][0] && currentKeypadEntry[1] == storedCodes[i][1] && currentKeypadEntry[2] == storedCodes[i][2] && currentKeypadEntry[3] == storedCodes[i][3]) {
+			return true;
+		}
+	}
+	return false;
+}
 
+/*
+ * This stores a newly entered four digit pin
+ *
+ * Return: None (void)
+ */
+void storeNewPin() {
+	if(currentKeypadEntry[3] != 0xF)
+	{
+		for(int i = 0; i < MAX_NUM_STORED_CODES; i++)
+		{
+			if(storedCodes[i][0] == 0xF)
+			{
+				storedCodes[i][0] = currentKeypadEntry[0];
+				storedCodes[i][1] = currentKeypadEntry[1];
+				storedCodes[i][2] = currentKeypadEntry[2];
+				storedCodes[i][3] = currentKeypadEntry[3];
+				break;
+			}
+		}
 	}
 }
