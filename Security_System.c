@@ -73,6 +73,12 @@ void addNewKeypadEntry();
 // displays current pin entry to
 void displayCurrentEntry();
 
+// checks if code is equal to MASTER_CODE
+bool checkForMasterCode();
+
+// checks if code is already existing
+bool checkForExistingCode();
+
 #define CODE_LENGTH 4
 #define MAX_NUM_STORED_CODES 100
 
@@ -106,7 +112,7 @@ int main(void)
     init_platform();
 
     // Set the current mode
-    setMode(DEFAULT_MODE);
+    setMode(0x1);
 
     // Hex value of key press
     uint8_t keyHex;
@@ -129,38 +135,57 @@ int main(void)
         }
         else if (isKeypadPressed())
         {
+        	if(currentKeypadEntry[3] != 15) {
+        		currentKeypadEntry[0] = BLANK_CODE[0];
+        		currentKeypadEntry[1] = BLANK_CODE[1];
+        		currentKeypadEntry[2] = BLANK_CODE[2];
+        		currentKeypadEntry[3] = BLANK_CODE[3];
+        	}
+        	for(int i = 0; i < 15000000; i++){}
             // add to currentKeyPadEntry
             addNewKeypadEntry();
             // set seven segment display to currentKeyPadEntry
             displayCurrentEntry();
 
-            if (currentKeypadEntry[0] != 0xF & currentKeypadEntry[1] != 0xF &  // NOTE could potentially create a function for this
-                currentKeypadEntry[2] != 0xF & currentKeypadEntry[3] != 0xF)
+            if (currentKeypadEntry[0] != 15 & currentKeypadEntry[1] != 15 &  // NOTE could potentially create a function for this
+                currentKeypadEntry[2] != 15 & currentKeypadEntry[3] != 15)
             {
                switch (currentMode)
                {
                    case MODE_1_CHECK_CODE:
                        // Set led1 (mode led) to color of currentMode
-                       if (currentKeypadEntry == MASTER_CODE)
+                       if (currentKeypadEntry[0] == MASTER_CODE[0] && currentKeypadEntry[1] == MASTER_CODE[1] && currentKeypadEntry[2] == MASTER_CODE[2] && currentKeypadEntry[3] == MASTER_CODE[3])
                        {
-                           // flash green leds
+                    	   // flash green led
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_BLUE_MASK | LED_1_GREEN_MASK);
+                    	   for(int i = 0; i < 10000000; i++){}
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_BLUE_MASK);
                        }
                        else
                        {
                            // flash red leds
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_BLUE_MASK | LED_1_RED_MASK);
+                           for(int i = 0; i < 10000000; i++){}
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_BLUE_MASK);
                        }
                        break;
-//                   case MODE_2_SET_CODE:
-//                       // Set led1 (mode led) to color of currentMode
-//                       if (code != masterCode and code not in codes[])
-//                       {
-//                           // flash green leds and add code to codes[]
-//                       }
-//                       else
-//                       {
-//                           // flash red leds
-//                       }
-//                       break;
+                   case MODE_2_SET_CODE:
+                       // Set led1 (mode led) to color of currentMode
+                       if (checkForMasterCode() | )
+                       {
+                           // flash green leds and add code to codes[]
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK | LED_1_GREEN_MASK);
+                    	   for(int i = 0; i < 10000000; i++){}
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK);
+                       }
+                       else
+                       {
+                           // flash red leds
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK | LED_1_RED_MASK);
+                    	   for(int i = 0; i < 10000000; i++){}
+                    	   AXILAB_SLAVE_LED_mWriteReg(0x43c30000, 0, LED_0_YELLOW_MASK);
+                       }
+                       break;
 //                   case MODE_3_GET_CODE:
 //                       // Set led1 (mode led) to color of currentMode
 //                       if (code != masterCode and code in codes[])
@@ -217,6 +242,7 @@ void toggleMode()
  */
 void setMode(Mode mode)
 {
+	print("Setting mode\n");
     // Set the current mode
     currentMode = mode;
 
@@ -287,7 +313,7 @@ bool isModeButtonPressed() {
  * false if keypad button has not been pressed
  */
 bool isKeypadPressed() {
-  if(KEYPAD_BINARY_SLAVE_mReadReg(KEYPAD_BASE_ADDR, 0) != !0x0) {  // TODO double check if this is correct
+  if(KEYPAD_BINARY_SLAVE_mReadReg(KEYPAD_BASE_ADDR, 0) != 0xF) {
     return true;
   }
   return false;
@@ -300,19 +326,23 @@ bool isKeypadPressed() {
  */
 void addNewKeypadEntry() {
   u32 data1 = KEYPAD_BINARY_SLAVE_mReadReg(0x43c00000, 0);
-  if(currentKeypadEntry[3] == 0xF ) {
-      for(int i = 3; i >= 0; i--) {
-          if(data1 != 0xFFFFFFFF) {
-            if(i == 0) {
-                currentKeypadEntry[0] = data1 & 0xF;
-            }
-            else {
-                currentKeypadEntry[i] = currentKeypadEntry[i - 1];
-            }
+//  printf("data: %d", data1);
+  for(int i = 3; i >= 0; i--) {
+      if(data1 != 15) {
+          if(i == 0) {
+              currentKeypadEntry[0] = data1 & 0xF;
+          }
+          else {
+              currentKeypadEntry[i] = currentKeypadEntry[i - 1];
           }
       }
-      currentKeypadEntryIndex++;
+
   }
+  printf("entries: %d%d%d%d\n", currentKeypadEntry[0],currentKeypadEntry[1],currentKeypadEntry[2],currentKeypadEntry[3]);
+
+//  if(currentKeypadEntry[3] == 0xF ) {
+
+//  }
 //  else if(data1 != 0xF) {  // add newly entered pin into
 //      if(storedCodes[MAX_NUM_STORED_CODES - 1][3] != 0xF) {
 //          storedCodes[currentKeypadEntryIndex][0] = currentKeypadEntry[0];
@@ -330,6 +360,25 @@ void addNewKeypadEntry() {
  * Return: None (void)
  */
 void displayCurrentEntry() {
-	uint16_t displayValue = (currentKeypadEntry[3] & 0x1000) | (currentKeypadEntry[2] & 0x0100) | (currentKeypadEntry[1] & 0x0010) | currentKeypadEntry[0];
-	SEVEN_SEGMENT_DISPLAY_SLAVE_mWriteReg(0x43c20000, 0, displayValue);
+	SEVEN_SEGMENT_DISPLAY_SLAVE_mWriteReg(0x43c20000, 0, currentKeypadEntry[3] << 12 | currentKeypadEntry[2] << 8 | currentKeypadEntry[1] << 4 | currentKeypadEntry[0]);
+}
+
+/*
+ * This function adds a new keypad entry to the set of pin numbers
+ *
+ * Return: bool returns true if currentKeypadEntry is the master code
+ */
+bool checkForMasterCode() {
+	return currentKeypadEntry[0] == MASTER_CODE[0] && currentKeypadEntry[1] == MASTER_CODE[1] && currentKeypadEntry[2] == MASTER_CODE[2] && currentKeypadEntry[3] == MASTER_CODE[3];
+}
+
+/*
+ * This function checks if a
+ *
+ * Return: bool returns true if currentKeypadEntry is the master code
+ */
+bool checkForExistingCode() {
+	for(int i = 0; i < ) {
+
+	}
 }
