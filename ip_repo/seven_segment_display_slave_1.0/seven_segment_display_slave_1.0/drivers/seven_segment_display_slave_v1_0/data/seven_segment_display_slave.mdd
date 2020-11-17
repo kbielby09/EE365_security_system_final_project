@@ -1,0 +1,10 @@
+
+
+OPTION psf_version = 2.1;
+
+BEGIN DRIVER seven_segment_display_slave
+	OPTION supported_peripherals = (seven_segment_display_slave);
+	OPTION copyfiles = all;
+	OPTION VERSION = 1.0;
+	OPTION NAME = seven_segment_display_slave;
+END DRIVER
