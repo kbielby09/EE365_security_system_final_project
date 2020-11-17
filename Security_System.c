@@ -1,19 +1,51 @@
 /* -----------------------------------------------------------------------------
- * Filename     : hex_keypad_driver.vhd
+ * Filename     : Security_System.c
  * Author(s)    : Kyle Bielby, Chris Lloyd (Team 1)
  * Class        : EE365 (Final Project)
  * Due Date     : 2020-11-23
  * Target Board : Cora Z7-10
  * Description  : Multi-mode simple security system.
- *                CDL=> Elaborate on design (modes, codes, I/O etc..)
+ *
+ *                This file comprises
+ *                the software for a final project for
+ *                EE365 (Advanced Digital Logic Design) at Clarkson University.
+ *
+ *                At a high level, this system is used for verifying 4 digit
+ *                passcodes (0-9) mimicking some sort of authentication system.
+ *                There is also functionality to store and remove passcodes.
+ *
+ *                It has three core modes (indicated by onboard LED_0):
+ *                <> MODE_1_CHECK_CODE (Led color: Blue)
+ *                  -> Allows a user to enter a passcode and provides feedback
+ *                     indicating whether the passcode is valid.
+ *
+ *                <> MODE_2_SET_CODE (Led color: Yellow)
+ *                  -> Allows a user to enter a passcode and provides feedback
+ *                     indicating whether the passcode was stored.
+ *
+ *                <> MODE_3_REMOVE_CODE (Led color: Purple)
+ *                  -> Allows a user to enter a passcode and provides feedback
+ *                     indicating whether the passcode was removed.
+ *
+ *                To indicate whether an operation completed successfully
+ *                or not, an onboard pushbutton will flash either green or red.
+ *
+ *                Digit Input is through a matrix keypad being controlled in
+ *                firmware. This provides a stream of 4-bit data indicating
+ *                what button is pressed (0-9 only) with all other keys and
+ *                no key pressed indicated by 0xF.
+ *
+ *                Passcode output is through a 4-digit seven segment display
+ *                also being controlled in firmware. To drive the display, a
+ *                16-bit number is written to the display register with
+ *                the 4 nibbles corresponding to the 4 digits. Once again,
+ *                0-9 only with 0xF being a blank digit.
+ *
  * -------------------------------------------------------------------------- */
 
 // Includes
 #include <stdio.h>
 #include <stdbool.h>
-#include "platform.h"
-#include "xil_printf.h"
-#include "xparameters.h"
 #include "xil_cache.h"
 #include "keypad_binary_slave.h"
 #include "seven_segment_display_slave.h"
@@ -21,13 +53,13 @@
 #include "axilab_slave_led.h"
 #include "xil_io.h"
 
-// Masks for on board push buttons
+// Masks for onboard push buttons
 #define BUTTON_0_MASK 1
 #define BUTTON_1_MASK 2
 #define RESET_BUTTON_MASK BUTTON_1_MASK
 #define MODE_BUTTON_MASK  BUTTON_0_MASK
 
-// Masks for colors of each onboard led
+// Masks for individual colors of each onboard led
 #define LED_0_BLUE_MASK   0b000001
 #define LED_0_GREEN_MASK  0b000010
 #define LED_0_RED_MASK    0b000100
@@ -39,18 +71,22 @@
 
 // Masks for peripheral addresses
 #define KEYPAD_BASE_ADDR        0x43c00000
-#define ON_BOARD_PUSH_BASE_ADDR 0x43c10000
+#define ONBOARD_PUSH_BASE_ADDR  0x43c10000
 #define SEVEN_SEGMENT_BASE_ADDR 0x43c20000
-#define RGB_LED_BASE_ADDR       0x43c30000
+#define RGB_LEDS_BASE_ADDR      0x43c30000
+
+/*******************************************************************************
+ * Mode related functionality
+ ******************************************************************************/
 
 // An enum to define the operating modes (states) of the program
 typedef enum
 {
-    MODE_1_CHECK_CODE = 0x1,
-    MODE_2_SET_CODE   = 0x2,
-    MODE_3_GET_CODE   = 0x3
+    MODE_1_CHECK_CODE  = 0x1,
+    MODE_2_SET_CODE    = 0x2,
+    MODE_3_REMOVE_CODE = 0x3
 } Mode;
-#define DEFAULT_MODE MODE_1_CHECK_CODE  // CDL=> Moved to be below definition
+#define DEFAULT_MODE MODE_1_CHECK_CODE
 
 // The current mode of the program
 Mode currentMode;
@@ -61,11 +97,74 @@ void toggleMode();
 // Sets the current mode of operation
 void setMode(Mode mode);
 
+/*******************************************************************************
+ * Passcode related functionality
+ ******************************************************************************/
+
+#define PASSCODE_LENGTH 4
+#define MAX_NUM_STORED_PASSCODES 100
+
+// Master passcode for system (cannot be changed)
+const uint8_t MASTER_PASSCODE[PASSCODE_LENGTH] = {0,0,0,0};
+
+// Location to store valid passcodes
+uint8_t storedPasscodes[MAX_NUM_STORED_PASSCODES][PASSCODE_LENGTH];
+uint8_t currentStoredPasscodesIndex;
+
+// A location to store the current keypad entry (0xF results in a blank digit)
+uint8_t currentPasscode[PASSCODE_LENGTH];
+uint8_t currentPasscodeIndex;
+
+// Clears and resets storedPasscodes
+void resetStoredPasscodes();
+
+// Clears and resets currentPasscode
+void resetCurrentPasscode();
+
+// Adds the current passcode to storedPasscodes
+bool storePasscode(uint8_t passcode[]);
+
+// Removes the current passcode from storedPasscodes
+bool removePasscode(uint8_t passcode[]);
+
+// Add a digit to currentPasscode
+bool storeCurrentPasscodeDigit(uint8_t digitData);
+
+// Checks if passcode is equal to MASTER_PASSCODE
+bool isMasterPasscode(uint8_t passcode[]);
+
+// Checks if passcode exists in storedPasscodes
+bool isExistingPasscode(uint8_t passcode[]);
+
+// Checks if storedPasscodes is full
+bool isStoredPasscodesFull();
+
+// Checks if currentPasscode is complete
+bool isCurrentPasscodeComplete();
+
+/*******************************************************************************
+ * Onboard LED related functionality
+ ******************************************************************************/
+
+// Sets the leds
+void setLEDS(uint8_t ledData);
+
 // Sets mode LED color for current mode of operation
 void setModeLED();
 
-// Determines if reset button has been pressed
+// Flashes the status led a certain color
+void flashStatusLED(uint8_t statusColor);
+
+/*******************************************************************************
+ * Miscellaneous functionality
+ ******************************************************************************/
+bool previousResetButtonState = false;
+
+// Determines if reset button is pressed
 bool isResetButtonPressed();
+
+// Determines if reset button was released
+bool isResetButtonReleased();
 
 // Determines if mode button has been pressed
 bool isModeButtonPressed();
@@ -73,39 +172,20 @@ bool isModeButtonPressed();
 // Determines if keypad has been pressed
 bool isKeypadPressed();
 
-// Add a new keypad entry to code
-void addNewKeypadEntry();
+// Gets the current keypad key pressed
+uint8_t getKeypadValue();
 
-// Displays current pin entry to seven segment display
-void displayCurrentEntry();
+// Displays code to seven segment display
+void displayPasscode(uint8_t passcode[]);
 
-// Checks if code is equal to MASTER_CODE
-bool checkForMasterCode();
+// Delay for ms milliseconds
+void delayMS(uint16_t ms);
 
-// Checks if code is already existing
-bool checkForExistingCode();
+// Reset the system
+void resetSystem();
 
-// Stores newly entered pin number
-void storeNewPin();
-
-// Remove stored pin number
-void removePin();
-
-#define CODE_LENGTH 4
-#define MAX_NUM_STORED_CODES 100
-
-// Empty code for all digits blank (Note: Blank code is denoted by 0xF)
-const uint8_t BLANK_CODE[CODE_LENGTH] = {0xF,0xF,0xF,0xF};  // CDL=> Needed?
-
-// Master code for system (cannot be changed)
-const uint8_t MASTER_CODE[CODE_LENGTH] = {0,0,0,0};
-
-// Location to store valid codes
-uint8_t storedCodes[MAX_NUM_STORED_CODES][CODE_LENGTH];
-
-// A location to store the current keypad entry
-uint8_t currentKeypadEntry[CODE_LENGTH];
-uint8_t currentKeypadEntryIndex; // CDL=> Used or needed?
+// Clear all outputs
+void clearOutputs();
 
 /*
  * This function is the main function of the project.
@@ -117,162 +197,95 @@ uint8_t currentKeypadEntryIndex; // CDL=> Used or needed?
  */
 int main(void)
 {
-    // Initialization of UART for print functionality
-    init_platform();
+    // Reset passcodes and current mode
+    resetSystem();
 
-    // Initialize stored codes to null values of 0xF
-    for (int i = 0; i < MAX_NUM_STORED_CODES; i++)
+    while (true)  // Main program execution loop
     {
-    	// storedCodes[i] = BLANK_CODE; // CDL=> Would this work? Better way to clear codes?
-        storedCodes[i][0] = 0xF;
-    	storedCodes[i][1] = 0xF;
-    	storedCodes[i][2] = 0xF;
-    	storedCodes[i][3] = 0xF;
-    }
-
-    // Set the current mode to default mode (check mode)
-    setMode(DEFAULT_MODE);
-
-    // Hex value of key press
-    uint8_t keyHex;
-
-    while (1) // Main program execution loop
-    {
-        if (isResetButtonPressed())
+        if (isResetButtonPressed())  // Is reset button being held down?
         {
-            // Set the current mode
-            setMode(DEFAULT_MODE);
-
-            // Clear any stored codes // CDL=> Move to method?
-            memset(storedCodes, 0, sizeof(storedCodes[0][0]) *
-                   MAX_NUM_STORED_CODES * CODE_LENGTH);
+            clearOutputs();  // Clear all outputs
         }
-        else if (isModeButtonPressed())
+
+        if (isResetButtonReleased())  // Is reset button being released (falling edge)?
         {
-            // Toggle the current mode and reset code
-            toggleMode();
-
-            for(int i = 0; i < 100000000; i++){}  // delay  // CDL=> Make explicit delay function
-
+            resetSystem();                     // Reset passcodes and mode
+            delayMS(250);                      // Delay program
+            flashStatusLED(LED_1_GREEN_MASK);  // Flash green status led
         }
-        else if (isKeypadPressed())
+        else if (isModeButtonPressed())  // Is mode button being pressed?
         {
-        	if (currentKeypadEntry[3] != 0xF) {
-        		currentKeypadEntry[0] = BLANK_CODE[0];
-        		currentKeypadEntry[1] = BLANK_CODE[1];
-        		currentKeypadEntry[2] = BLANK_CODE[2];
-        		currentKeypadEntry[3] = BLANK_CODE[3];
-        	}  // CDL=> Explain this logic better? Unclear at first glance
+            toggleMode();  // Toggle the current mode and reset passcode
+            delayMS(500);  // Delay 500 ms
+        }
+        else if (isKeypadPressed())  // Is a key on keypad being pressed?
+        {
+            // Add to currentPasscode
+            storeCurrentPasscodeDigit(getKeypadValue());
 
-        	for(int i = 0; i < 15000000; i++){}  // CDL=> Make explicit delay function
+            // Delay program to prevent same press being registered constantly
+            delayMS(450);
 
-            // Add to currentKeyPadEntry
-            addNewKeypadEntry();
-
-            // Set seven segment display to currentKeyPadEntry
-            displayCurrentEntry();  // CDL=> Maybe just called when entry is updated in addNewKeypadEntry since should
-                                    // only happen when that updates?
-
-            // Check if four digits have been entered
-            if (currentKeypadEntry[0] != 0xF && currentKeypadEntry[1] != 0xF &&
-                currentKeypadEntry[2] != 0xF && currentKeypadEntry[3] != 0xF)  // CDL=> Maybe use an index instead?
+            // Check if full passcode has been entered
+            if (isCurrentPasscodeComplete())
             {
-               // CDL=> LED logic should be abstracted out into led function (flashStatusLED(COLOR (green or red)) with
-               // built in case statement to | with current mode led)
-               // make it go (on, delay, off, delay, on, delay, off, delay) (0.5-1 second total time to be noticeable)
                switch (currentMode)
                {
                     case MODE_1_CHECK_CODE:
-                        if (checkForMasterCode() | checkForExistingCode())
+                        if (isMasterPasscode(currentPasscode) ||
+                            isExistingPasscode(currentPasscode))
                         {
                             // Flash green status led
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                        LED_0_BLUE_MASK |
-                                                        LED_1_GREEN_MASK);
-
-                            for(int i = 0; i < 10000000; i++){}  // delay // CDL=> Make explicit delay function
-
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                        LED_0_BLUE_MASK);
+                            // (Indicating passcode valid)
+                            flashStatusLED(LED_1_GREEN_MASK);
                         }
                         else
                         {
                             // Flash red status led
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                        LED_0_BLUE_MASK |
-                                                        LED_1_RED_MASK);
-                            for(int i = 0; i < 10000000; i++){} // CDL=> Make explicit delay function
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                        LED_0_BLUE_MASK);
+                            // (Indicating passcode invalid)
+                            flashStatusLED(LED_1_RED_MASK);
                         }
                         break;
                     case MODE_2_SET_CODE:
-                        if (!checkForMasterCode() && !checkForExistingCode())
+                        if (!isMasterPasscode(currentPasscode) &&
+                            !isExistingPasscode(currentPasscode) &&
+                            !isStoredPasscodesFull())
                         {
                             // Flash green status led
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_YELLOW_MASK |
-                                                       LED_1_GREEN_MASK);
-                            for(int i = 0; i < 10000000; i++){}  // delay // CDL=> Make explicit delay function
-
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_YELLOW_MASK);
-
-                            // Add code to stored codes
-                            storeNewPin();
+                            // (Indicating passcode stored)
+                            flashStatusLED(LED_1_GREEN_MASK);
+                            storePasscode(currentPasscode);
                         }
                         else
                         {
                             // Flash red status led
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_YELLOW_MASK |
-                                                       LED_1_RED_MASK);
-
-                            for(int i = 0; i < 10000000; i++){}  // delay // CDL=> Make explicit delay function
-
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_YELLOW_MASK);
+                            // (Indicating passcode not stored)
+                            flashStatusLED(LED_1_RED_MASK);
                         }
                         break;
-                    case MODE_3_GET_CODE:
-                        if (!checkForMasterCode() && checkForExistingCode())
+                    case MODE_3_REMOVE_CODE:
+                        if (!isMasterPasscode(currentPasscode) &&
+                            isExistingPasscode(currentPasscode))
                         {
                             // Flash green status led
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_PURPLE_MASK |
-                                                       LED_1_GREEN_MASK);
-
-                            for(int i = 0; i < 10000000; i++){}  // delay // CDL=> Make explicit delay function
-
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_PURPLE_MASK);
-
-                            // Remove entered code from stored codes
-                            removePin();
+                            // (Indicating passcode removed)
+                            flashStatusLED(LED_1_GREEN_MASK);
+                            removePasscode(currentPasscode);
                         }
                         else
                         {
                             // Flash red status led
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_PURPLE_MASK |
-                                                       LED_1_RED_MASK);
-
-                            for(int i = 0; i < 10000000; i++){}  // delay // CDL=> Make explicit delay function
-
-                            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0,
-                                                       LED_0_PURPLE_MASK);
+                            // (Indicating passcode not removed)
+                            flashStatusLED(LED_1_RED_MASK);
                         }
                         break;
                     default:
                         break;
                }
+               resetCurrentPasscode();  // Reset current passcode
             }
         }
-
     }
-
-    // Shutdown UART interface
-    cleanup_platform();
 
     // Return with no errors
     return 0;
@@ -292,9 +305,9 @@ void toggleMode()
             setMode(MODE_2_SET_CODE);    // Change mode to check mode
             break;
         case MODE_2_SET_CODE:
-            setMode(MODE_3_GET_CODE);    // Change mode to set mode
+            setMode(MODE_3_REMOVE_CODE);    // Change mode to set mode
             break;
-        case MODE_3_GET_CODE:
+        case MODE_3_REMOVE_CODE:
             setMode(MODE_1_CHECK_CODE);  // Change mode to remove mode
             break;
         default:
@@ -317,12 +330,186 @@ void setMode(Mode mode)
     // Set the mode LED to the current mode color
     setModeLED();
 
-    // Reset the current code // CDL=> Display afterwards
-    currentKeypadEntry[0] = BLANK_CODE[0];  // CDL=> Move to clearEntry method
-    currentKeypadEntry[1] = BLANK_CODE[1];
-    currentKeypadEntry[2] = BLANK_CODE[2];
-    currentKeypadEntry[3] = BLANK_CODE[3];
-    currentKeypadEntryIndex = 0;
+    // Reset currentPasscode to null values of 0xF
+    resetCurrentPasscode();
+}
+
+/*
+ * This function resets storedPasscodes.
+ *
+ * Return: None (void)
+ */
+void resetStoredPasscodes()
+{
+    // Clear any stored passcodes and reset index
+    memset(storedPasscodes, 0xF, sizeof(storedPasscodes[0][0]) *
+                                 MAX_NUM_STORED_PASSCODES * PASSCODE_LENGTH);
+    currentStoredPasscodesIndex = 0;
+}
+
+/*
+ * This function resets currentPasscode.
+ *
+ * Return: None (void)
+ */
+void resetCurrentPasscode()
+{
+    // Clear current passcode
+    memset(currentPasscode, 0xF, sizeof(currentPasscode[0]) * PASSCODE_LENGTH);
+    currentPasscodeIndex = 0;
+
+    // Display the current passcode to the seven segment display
+    displayPasscode(currentPasscode);
+}
+
+/*
+ * This function stores passcode to storedPasscodes.
+ *
+ * Param: passcode: The passcode to store.
+ * Return: (bool): Passcode stored successfully?
+ */
+bool storePasscode(uint8_t passcode[])
+{
+    // Ensure storedPasscodes is not full
+    if (isStoredPasscodesFull()) { return false; }
+
+    // Add passcode and increment index
+    storedPasscodes[currentStoredPasscodesIndex][0] = passcode[0];
+    storedPasscodes[currentStoredPasscodesIndex][1] = passcode[1];
+    storedPasscodes[currentStoredPasscodesIndex][2] = passcode[2];
+    storedPasscodes[currentStoredPasscodesIndex][3] = passcode[3];
+    currentStoredPasscodesIndex++;
+
+    return true;
+}
+
+/*
+ * This function removes passcode from storedPasscodes.
+ *
+ * Param: passcode: The passcode to remove.
+ * Return: (bool): Passcode removed successfully?
+ */
+bool removePasscode(uint8_t passcode[])
+{
+    // Ensure passcode in storedPasscodes
+    if (!isExistingPasscode(passcode)) { return false; }
+
+    // Find passcode index
+    int i = 0;
+    for (; i < currentStoredPasscodesIndex; i++)
+    {
+        if ((passcode[0] == storedPasscodes[i][0]) &&
+            (passcode[1] == storedPasscodes[i][1]) &&
+            (passcode[2] == storedPasscodes[i][2]) &&
+            (passcode[3] == storedPasscodes[i][3]))
+        {
+            break;
+        }
+    }
+
+    // Shift all elements back and remove passcode
+    for (; i < currentStoredPasscodesIndex - 1; i++)
+    {
+        storedPasscodes[i][0] = storedPasscodes[i + 1][0];
+        storedPasscodes[i][1] = storedPasscodes[i + 1][1];
+        storedPasscodes[i][2] = storedPasscodes[i + 1][2];
+        storedPasscodes[i][3] = storedPasscodes[i + 1][3];
+    }
+
+    // Blank out last code
+    currentStoredPasscodesIndex--;
+    storedPasscodes[currentStoredPasscodesIndex][0] = 0xF;
+    storedPasscodes[currentStoredPasscodesIndex][1] = 0xF;
+    storedPasscodes[currentStoredPasscodesIndex][2] = 0xF;
+    storedPasscodes[currentStoredPasscodesIndex][3] = 0xF;
+
+    return true;
+}
+
+/*
+ * This function stores a digit to currentPasscode.
+ *
+ * Param: digitData: The digit to store.
+ * Return: (bool): Digit stored successfully?
+ */
+bool storeCurrentPasscodeDigit(uint8_t digitData)
+{
+    // Ensure passcode is not complete
+    if (isCurrentPasscodeComplete()) { return false; }
+
+    // Store passcode
+    currentPasscode[currentPasscodeIndex++] = (digitData & 0xF);
+
+    // Display the current passcode to the seven segment display
+    displayPasscode(currentPasscode);
+
+    return true;
+}
+
+/*
+ * This function checks if passcode is equal to MASTER_PASSCODE.
+ *
+ * Param: passcode: The passcode to check.
+ * Return: (bool): passcode equals MASTER_PASSCODE?
+ */
+bool isMasterPasscode(uint8_t passcode[])
+{
+    return ((passcode[0] == MASTER_PASSCODE[0]) &&
+            (passcode[1] == MASTER_PASSCODE[1]) &&
+            (passcode[2] == MASTER_PASSCODE[2]) &&
+            (passcode[3] == MASTER_PASSCODE[3]));
+}
+
+/*
+ * This function checks if passcode exists in storedPasscodes.
+ *
+ * Param: passcode: The passcode to check.
+ * Return: (bool): passcode exists in storedPasscodes?
+ */
+bool isExistingPasscode(uint8_t passcode[])
+{
+    for (int i = 0; i < currentStoredPasscodesIndex; i++)
+    {
+        if ((passcode[0] == storedPasscodes[i][0]) &&
+            (passcode[1] == storedPasscodes[i][1]) &&
+            (passcode[2] == storedPasscodes[i][2]) &&
+            (passcode[3] == storedPasscodes[i][3]))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * This function checks if storedPasscodes is full.
+ *
+ * Return: (bool): storedPasscodes is full?
+ */
+bool isStoredPasscodesFull()
+{
+    return (currentStoredPasscodesIndex == MAX_NUM_STORED_PASSCODES);
+}
+
+/*
+ * This function checks if currentPasscode is complete.
+ *
+ * Return: (bool): currentPasscode is complete?
+ */
+bool isCurrentPasscodeComplete()
+{
+    return (currentPasscodeIndex == PASSCODE_LENGTH);
+}
+
+/*
+ * This function writes to the onboard leds.
+ *
+ * Param: ledData: Data to write to leds (lower 6 bits only).
+ * Return: None (void)
+ */
+void setLEDS(uint8_t ledData)
+{
+    AXILAB_SLAVE_LED_mWriteReg(RGB_LEDS_BASE_ADDR, 0, (ledData & 0x3F));
 }
 
 /*
@@ -334,15 +521,14 @@ void setModeLED()
 {
     switch (currentMode)
     {
-        // CDL=> Abstract to setLEDs() method
         case MODE_1_CHECK_CODE:
-            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_0_BLUE_MASK);
+            setLEDS(LED_0_BLUE_MASK);
             break;
         case MODE_2_SET_CODE:
-            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_0_YELLOW_MASK);
+            setLEDS(LED_0_YELLOW_MASK);
             break;
-        case MODE_3_GET_CODE:
-            AXILAB_SLAVE_LED_mWriteReg(RGB_LED_BASE_ADDR, 0, LED_0_PURPLE_MASK);
+        case MODE_3_REMOVE_CODE:
+            setLEDS(LED_0_PURPLE_MASK);
             break;
         default:
             break;
@@ -350,195 +536,165 @@ void setModeLED()
 }
 
 /*
- * This function determines if the reset button has been pressed.
+ * This function flashes the status led a certain color indicating the
+ * status of an operation.
  *
- * Return: bool: true if reset button has been pressed,
- *               false if reset button has not been pressed
+ * Param: statusColor: The color to flash status led with.
+ * Return: None (void)
+ */
+void flashStatusLED(uint8_t statusColor)
+{
+    // Ensure only led1 is being set
+    statusColor = (statusColor & 0b111000);
+
+    // Determine mode color
+    uint8_t modeColor = 0;
+    switch (currentMode)
+    {
+        case MODE_1_CHECK_CODE:
+            modeColor = LED_0_BLUE_MASK;
+            break;
+        case MODE_2_SET_CODE:
+            modeColor = LED_0_YELLOW_MASK;
+            break;
+        case MODE_3_REMOVE_CODE:
+            modeColor = LED_0_PURPLE_MASK;
+            break;
+    }
+
+    // Flash status led twice (total of 0.5 seconds)
+    for (int i = 0; i < 2; i++)
+    {
+        setLEDS(modeColor | statusColor);  // Flash status led on
+        delayMS(125);                      // Delay program
+        setLEDS(modeColor);                // Flash status led off
+        delayMS(125);                      // Delay program
+    }
+}
+
+/*
+ * This function determines if the reset button is being pressed.
+ *
+ * Return: (bool): Reset button is being pressed?
  */
 bool isResetButtonPressed()
 {
-    // CDL=> If statement not needed (simply return the value of the conditional)
-    // return (AXILAB_SLAVE_BUTTON_mReadReg(ON_BOARD_PUSH_BASE_ADDR, 0) &
-    //         RESET_BUTTON_MASK)
-    if (AXILAB_SLAVE_BUTTON_mReadReg(ON_BOARD_PUSH_BASE_ADDR, 0) &
-        RESET_BUTTON_MASK)
-    {
-        return true;
-    }
-    return false;
+    return (AXILAB_SLAVE_BUTTON_mReadReg(ONBOARD_PUSH_BASE_ADDR, 0) &
+            RESET_BUTTON_MASK);
 }
 
 /*
- * This function determines if the mode button has been pressed.
+ * This function determines if the reset button has been released. This is
+ * indicated by a falling edge on button state.
  *
- * Return: bool: true if mode button has been pressed,
- *               false if mode button has not been pressed
+ * Return: (bool): Reset button has been released?
+ */
+bool isResetButtonReleased()
+{
+    // Get whether the reset button was pressed
+    bool currentResetButtonState = isResetButtonPressed();
+
+    // Check if a falling edge has occurred
+    bool fallingEdgeReset = (previousResetButtonState &&
+                             !currentResetButtonState);
+
+    // Set the previous state to the current state
+    previousResetButtonState = currentResetButtonState;
+
+    return fallingEdgeReset;
+}
+
+/*
+ * This function determines if the mode button is being pressed.
+ *
+ * Return: (bool): Mode button is being pressed?
  */
 bool isModeButtonPressed()
 {
-    // CDL=> If statement not needed (simply return the value of the conditional)
-    if (AXILAB_SLAVE_BUTTON_mReadReg(ON_BOARD_PUSH_BASE_ADDR, 0) &
-        MODE_BUTTON_MASK)
-    {
-        return true;
-    }
-    return false;
+    return (AXILAB_SLAVE_BUTTON_mReadReg(ONBOARD_PUSH_BASE_ADDR, 0) &
+            MODE_BUTTON_MASK);
 }
 
 /*
- * This function determines if the keypad button has been pressed.
+ * This function determines if a key on the keypad is being pressed.
  *
- * Return: bool: true if keypad button has been pressed,
- *               false if keypad button has not been pressed
+ * Return: (bool): Key on the keypad is being pressed?
  */
 bool isKeypadPressed()
 {
-    // CDL=> Add check for any non 0-9 buttons or move to vhdl driver?
-    // CDL=> If statement not needed (simply return the value of the conditional)
-    if (KEYPAD_BINARY_SLAVE_mReadReg(KEYPAD_BASE_ADDR, 0) != 0xF)
+    return (KEYPAD_BINARY_SLAVE_mReadReg(KEYPAD_BASE_ADDR, 0) != 0xF);
+}
+
+/*
+ * This function gets the keypad value that is being pressed.
+ *
+ * Return: (uint8_t): Digit value of keypad keypress.
+ */
+uint8_t getKeypadValue()
+{
+    // Ensure keypad is pressed
+    if (!isKeypadPressed()) { return 0xF; }
+
+    // Return value of key press
+    return (KEYPAD_BINARY_SLAVE_mReadReg(KEYPAD_BASE_ADDR, 0) & 0xF);
+}
+
+/*
+ * This function displays a passcode to the seven segment display.
+ *
+ * Param: passcode: The passcode to display.
+ * Return: None (void)
+ */
+void displayPasscode(uint8_t passcode[])
+{
+    SEVEN_SEGMENT_DISPLAY_SLAVE_mWriteReg(SEVEN_SEGMENT_BASE_ADDR, 0,
+                                          (passcode[0] << 12) |
+                                          (passcode[1] << 8) |
+                                          (passcode[2] << 4) |
+                                          (passcode[3]));
+}
+
+/*
+ * This function delays (blocking) by approximately (ms) milliseconds.
+ *
+ * Param: ms: The number of milliseconds to delay by.
+ * Return: None (void)
+ */
+void delayMS(uint16_t ms)
+{
+    for (int i = 0; i < ms; i++)
     {
-        return true;
+        for(int i = 0; i < 80000; i++) {}
     }
-    return false;
 }
 
 /*
- * This function adds a new keypad entered digit to the currentKeypadEntry.
+ * This function clears all outputs including the onboard leds and seven
+ * segment display.
  *
  * Return: None (void)
  */
-void addNewKeypadEntry()
+void clearOutputs()
 {
-    // CDL=> This whole method could be commentted better to describe what each step is doing
-    u32 data1 = KEYPAD_BINARY_SLAVE_mReadReg(KEYPAD_BASE_ADDR, 0);
-    // CDL=> Add check for any non 0-9 buttons or move to vhdl driver?
-    if (data1 != 0xF && currentKeypadEntry[3] != 0xF)
-    {
-        currentKeypadEntry[0] = data1;
-        currentKeypadEntry[1] = BLANK_CODE[1];
-        currentKeypadEntry[2] = BLANK_CODE[2];
-        currentKeypadEntry[3] = BLANK_CODE[3];
-    }
-    else
-    {
-        for (int i = 3; i >= 0; i--)
-        {
-            if (data1 != 0xF)
-            {
-                if (i == 0)
-                {
-                    currentKeypadEntry[0] = data1 & 0xF;
-                }
-                else
-                {
-                    currentKeypadEntry[i] = currentKeypadEntry[i - 1];
-                }
-            }
-
-        }
-    }
+    setLEDS(0);
+    uint8_t blankPasscode[] = {0xF, 0xF, 0xF, 0xF};
+    displayPasscode(blankPasscode);
 }
 
 /*
- * This function displays the current entry code to the display.
+ * This function resets the system by reseting the current and stored
+ * passcode, and reseting the current mode.
  *
  * Return: None (void)
  */
-void displayCurrentEntry()
+void resetSystem()
 {
-    // Write the current entry code to the display
-	SEVEN_SEGMENT_DISPLAY_SLAVE_mWriteReg(SEVEN_SEGMENT_BASE_ADDR, 0,
-                                          currentKeypadEntry[3] << 12 |
-                                          currentKeypadEntry[2] << 8 |
-                                          currentKeypadEntry[1] << 4 |
-                                          currentKeypadEntry[0]);
-}
+    // Initialize storedPasscodes to null values of 0xF
+    resetStoredPasscodes();
 
-/*
- * This function checks if the current entry code is the master code.
- *
- * Return: bool: returns true if currentKeypadEntry is the master code,
- *              returns else otherwise
- */
-bool checkForMasterCode()
-{
-	return ((currentKeypadEntry[0] == MASTER_CODE[0]) &&
-            (currentKeypadEntry[1] == MASTER_CODE[1]) &&
-            (currentKeypadEntry[2] == MASTER_CODE[2]) &&
-            (currentKeypadEntry[3] == MASTER_CODE[3]));
-}
+    // Initialize currentPasscode to null values of 0xF
+    resetCurrentPasscode();
 
-/*
- * This function checks if the current entry code is a stored code.
- *
- * Return: bool: returns true if currentKeypadEntry is a stored code
- *               returns else otherwise
- */
-bool checkForExistingCode()
-{
-	for (int i = 0; i < MAX_NUM_STORED_CODES; i++)
-    {
-		if ((currentKeypadEntry[0] == storedCodes[i][0]) &&
-            (currentKeypadEntry[1] == storedCodes[i][1]) &&
-            (currentKeypadEntry[2] == storedCodes[i][2]) &&
-            (currentKeypadEntry[3] == storedCodes[i][3]))
-        {
-			return true;
-		}
-	}
-	return false;
-}
-
-/*
- * This function stores a newly entered four digit pin.
- *
- * Return: None (void)
- */
-void storeNewPin()
-{
-    // CDL=> This whole method could be commentted better to describe what each step is doing
-    // CDL=> Could return a boolean in case array is full (index at max), or code in array
-	if (currentKeypadEntry[3] != 0xF)
-	{
-		// CDL=> Why setting 0 index of stored codes?
-        storedCodes[0][0] = currentKeypadEntry[0];
-	    storedCodes[0][1] = currentKeypadEntry[1];
-		storedCodes[0][2] = currentKeypadEntry[2];
-		storedCodes[0][3] = currentKeypadEntry[3];
-		for (int i = 0; i < MAX_NUM_STORED_CODES; i++)
-		{
-			if (storedCodes[i][0] == 0xF)
-			{
-				storedCodes[i][0] = currentKeypadEntry[0];
-				storedCodes[i][1] = currentKeypadEntry[1];
-				storedCodes[i][2] = currentKeypadEntry[2];
-				storedCodes[i][3] = currentKeypadEntry[3];
-				break;
-			}
-		}
-	}
-}
-
-/*
- * This function removes a previously entered four digit pin.
- *
- * Return: None (void)
- */
-void removePin()
-{
-    // CDL=> This whole method could be commentted better to describe what each step is doing
-    // CDL=> Could return a boolean in case array is empty (index at 0), or code not in array
-	for (int i = 0; i < MAX_NUM_STORED_CODES; i++)
-    {
-		if ((storedCodes[i][0] == currentKeypadEntry[0]) &&
-            (storedCodes[i][1] == currentKeypadEntry[1]) &&
-            (storedCodes[i][2] == currentKeypadEntry[2]) &&
-            (storedCodes[i][3] == currentKeypadEntry[3]))
-        {
-			storedCodes[i][0] = 0xF;
-		    storedCodes[i][1] = 0xF;
-			storedCodes[i][2] = 0xF;
-			storedCodes[i][3] = 0xF;
-	    }
-	}
+    // Initialize current mode to default mode
+    setMode(DEFAULT_MODE);
 }
