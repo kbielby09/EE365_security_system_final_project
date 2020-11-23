@@ -1,7 +1,6 @@
 # Multi-mode simple security system Implemented on a Cora Z7-10 Development Board.
 
-This file comprises
-the software for a final project for
+This project includes the Software and Hardware for a final project for
 EE365 (Advanced Digital Logic Design) at Clarkson University.
 
 At a high level, this system is used for verifying 4 digit
@@ -9,16 +8,17 @@ passcodes (0-9) mimicking some sort of authentication system.
 There is also functionality to store and remove passcodes.
 
 It has three core modes (indicated by onboard LED_0):
-<> MODE_1_CHECK_CODE (Led color: Blue)
-  -> Allows a user to enter a passcode and provides feedback
+
+- MODE_1_CHECK_CODE (Led color: Blue)
+Allows a user to enter a passcode and provides feedback
       indicating whether the passcode is valid.
 
-<> MODE_2_SET_CODE (Led color: Yellow)
-  -> Allows a user to enter a passcode and provides feedback
+- MODE_2_SET_CODE (Led color: Yellow)
+Allows a user to enter a passcode and provides feedback
       indicating whether the passcode was stored.
 
-<> MODE_3_REMOVE_CODE (Led color: Purple)
-  -> Allows a user to enter a passcode and provides feedback
+- MODE_3_REMOVE_CODE (Led color: Purple)
+Allows a user to enter a passcode and provides feedback
       indicating whether the passcode was removed.
 
 To indicate whether an operation completed successfully
