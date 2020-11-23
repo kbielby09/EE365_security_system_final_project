@@ -206,7 +206,7 @@ begin
           s_keypad_binary <= "0111";
           s_button_pressed <= '1';
         elsif (I_KEYPAD_ROWS(3) = '1') then
-          s_keypad_binary <= "1110";
+          s_keypad_binary <= "1111";
           s_button_pressed <= '1';
         else
           s_keypad_binary <= s_keypad_binary;
@@ -251,16 +251,16 @@ begin
       -- Col 4
       elsif (s_keypad_state = COL4_READ_STATE) then
         if    (I_KEYPAD_ROWS(0) = '1') then
-          s_keypad_binary <= "1010";
+          s_keypad_binary <= "1111";
           s_button_pressed <= '1';
         elsif (I_KEYPAD_ROWS(1) = '1') then
-          s_keypad_binary <= "1011";
+          s_keypad_binary <= "1111";
           s_button_pressed <= '1';
         elsif (I_KEYPAD_ROWS(2) = '1') then
-          s_keypad_binary <= "1100";
+          s_keypad_binary <= "1111";
           s_button_pressed <= '1';
         elsif (I_KEYPAD_ROWS(3) = '1') then
-          s_keypad_binary <= "1101";
+          s_keypad_binary <= "1111";
           s_button_pressed <= '1';
         else
           if (s_button_pressed = '1') then
